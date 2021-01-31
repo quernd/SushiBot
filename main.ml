@@ -45,11 +45,11 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
 
     let is_user_authorized = Caqti_request.find_opt
         Caqti_type.int Caqti_type.bool
-        "SELECT authorized FROM users WHERE id = ?"
+        "SELECT authorized FROM users WHERE user_id = ?"
   end
 
-  let is_user_authorized chat_id =
-    Db.find_opt Q.is_user_authorized chat_id >>= function
+  let is_user_authorized user_id =
+    Db.find_opt Q.is_user_authorized user_id >>= function
     | Ok (Some true) -> return true  (* user authorized *)
     | Ok (Some false)                (* user unauthorized *)
     | Ok None        -> return false (* user unknown *)
