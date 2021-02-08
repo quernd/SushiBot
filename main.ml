@@ -52,8 +52,9 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
     Db.find_opt Q.is_user_authorized user_id >>= function
     | Ok (Some true) -> return true  (* user authorized *)
     | Ok (Some false)                (* user unauthorized *)
-    | Ok None        -> return false (* user unknown *)
-    | Error err      -> (let* _ = log' (`Error (Caqti_error.show err)) in
+    | Ok None                        (* user unknown *)
+      -> return false
+    | Error err      -> (let* _ = log' @@ `Error (Caqti_error.show err) in
                          return false)
 
   let api_query method' params =
@@ -113,8 +114,8 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
               let* authorized = is_user_authorized chat_id in
               let* reply = if authorized then
                   let* _ =
-                    log' (`Info ("Saving photo " ^ photo_id ^
-                                 " and replying with a text.")) in
+                    log' @@ `Info ("Saving photo " ^ photo_id ^
+                                   " and replying with a text.") in
 
                   Db.exec Q.insert_photo photo_id >>= function
                   | Ok _    ->
@@ -177,9 +178,9 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
       | Ok o    -> return o
       | Error _ -> return None in
     let* (resp, body) =
-      let* _ = log' (`Info ("Asking for updates with offset " ^ (
-          Option.value ~default:(-1) offset + 1 |> string_of_int
-        ))) in
+      let* _ = log' @@ `Info ("Asking for updates with offset " ^
+                              (Option.value ~default:(-1) offset + 1
+                               |> string_of_int)) in
       (* 10 minutes timeout *)
       api_query "getUpdates"
         (("timeout", [ string_of_int 600 ])::
@@ -189,7 +190,7 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
         )
     in
     let status = Cohttp_lwt.Response.status resp in
-    let* _ = log' (`Info (Cohttp.Code.string_of_status status)) in
+    let* _ = log' @@ `Info (Cohttp.Code.string_of_status status) in
     Cohttp_lwt.Body.to_string body >>= process
 
   let rec loop () =
