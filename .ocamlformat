@@ -1,0 +1,8 @@
+break-separators = before
+field-space = loose
+dock-collection-brackets = false
+break-cases = fit-or-vertical
+break-collection-expressions = fit-or-vertical
+break-infix = fit-or-vertical
+break-fun-decl = fit-or-vertical
+
