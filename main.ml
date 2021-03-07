@@ -18,6 +18,14 @@ let log' msg =
   | `Debug text, `Log_debug -> Lwt_io.printl text
   | _ -> return ()
 
+let with_timeout time f =
+  Lwt.pick
+    [ (f () >>= fun response -> Lwt.return_ok response)
+    ; ( Lwt_unix.sleep time >>= fun () ->
+        let* _ = log' @@ `Error "Timeout, closing connection." in
+        Lwt.return_error `Timeout )
+    ]
+
 module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
   let member = Yojson.Basic.Util.member
 
@@ -176,24 +184,29 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
       | Ok o -> return o
       | Error _ -> return None
     in
-    let* resp, body =
+    let* response =
       let* _ =
         log'
         @@ `Info
              ("Asking for updates with offset "
              ^ (Option.value ~default:(-1) offset + 1 |> string_of_int))
       in
-      (* 10 minutes timeout *)
-      api_query "getUpdates"
-        (("timeout", [ string_of_int 600 ])
-        ::
-        (match offset with
-        | Some o -> [ ("offset", [ string_of_int (o + 1) ]) ]
-        | None -> []))
+      (* 60 seconds timeout in case Telegram doesn't reply *)
+      with_timeout 60.0 (fun () ->
+          api_query "getUpdates"
+            (* 55 seconds timeout for long-polling *)
+            (("timeout", [ string_of_int 55 ])
+            ::
+            (match offset with
+            | Some o -> [ ("offset", [ string_of_int (o + 1) ]) ]
+            | None -> [])))
     in
-    let status = Cohttp_lwt.Response.status resp in
-    let* _ = log' @@ `Info (Cohttp.Code.string_of_status status) in
-    Cohttp_lwt.Body.to_string body >>= process
+    match response with
+    | Error `Timeout -> return ()
+    | Ok (resp, body) ->
+        let status = Cohttp_lwt.Response.status resp in
+        let* _ = log' @@ `Info (Cohttp.Code.string_of_status status) in
+        Cohttp_lwt.Body.to_string body >>= process
 
   let rec loop () =
     let* _ = body () in
