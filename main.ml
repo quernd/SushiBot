@@ -1,3 +1,5 @@
+[@@@alert "-all--all+unix@window"]
+
 open Lwt
 open Lwt.Syntax
 open Cohttp_lwt_unix
@@ -5,9 +7,7 @@ open Cohttp_lwt_unix
 type log_level = [ `Log_error | `Log_info | `Log_debug ]
 
 let log_level = `Log_info
-
 let db_uri = Uri.of_string "sqlite3:bot.db?busy_timeout=60000"
-
 let token = Sys.getenv "TELEGRAM_BOT_TOKEN"
 
 let log' msg =
