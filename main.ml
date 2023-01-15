@@ -1,5 +1,3 @@
-[@@@alert "-all--all+unix@window"]
-
 open Lwt
 open Lwt.Syntax
 open Cohttp_lwt_unix
@@ -30,35 +28,37 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
   let member = Yojson.Basic.Util.member
 
   module Q = struct
+    open Db
+    open Caqti_type
+    open Caqti_request.Infix
+
     let select_photo =
-      Caqti_request.find_opt Caqti_type.unit Caqti_type.string
-        "SELECT photo_id FROM photos ORDER BY RANDOM() LIMIT 1"
+      find_opt
+        ((unit ->! string)
+           "SELECT photo_id FROM photos ORDER BY RANDOM() LIMIT 1")
 
     let insert_photo =
-      Caqti_request.exec Caqti_type.string
-        "INSERT INTO photos (photo_id) VALUES (?)"
+      exec ((string ->. unit) @@ "INSERT INTO photos (photo_id) VALUES (?)")
 
     let insert_message =
-      Caqti_request.exec
-        (Caqti_type.tup2 Caqti_type.int Caqti_type.string)
-        "INSERT INTO messages (message_id, message) VALUES (?, ?)"
+      exec
+        ((tup2 int string ->. unit)
+           "INSERT INTO messages (message_id, message) VALUES (?, ?)")
 
     let insert_update =
-      Caqti_request.exec
-        (Caqti_type.tup2 Caqti_type.int Caqti_type.int)
-        "INSERT INTO updates (update_id, message_id) VALUES (?, ?)"
+      exec
+        ((tup2 int int ->. unit)
+           "INSERT INTO updates (update_id, message_id) VALUES (?, ?)")
 
     let select_max_update =
-      Caqti_request.find_opt Caqti_type.unit Caqti_type.int
-        "SELECT max(update_id) FROM updates"
+      find_opt ((unit ->! int) "SELECT max(update_id) FROM updates")
 
     let is_user_authorized =
-      Caqti_request.find_opt Caqti_type.int Caqti_type.bool
-        "SELECT authorized FROM users WHERE user_id = ?"
+      find_opt ((int ->! bool) "SELECT authorized FROM users WHERE user_id = ?")
   end
 
   let is_user_authorized user_id =
-    Db.find_opt Q.is_user_authorized user_id >>= function
+    Q.is_user_authorized user_id >>= function
     | Ok (Some true) -> return true (* user authorized *)
     | Ok (Some false) (* user unauthorized *) | Ok None (* user unknown *) ->
         return false
@@ -86,7 +86,7 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
     (* Get photo from db and send it to user.
        The photo is actually not a file but an id string of
        a previously received photo. *)
-    Db.find_opt Q.select_photo () >>= function
+    Q.select_photo () >>= function
     | Ok (Some photo_id) ->
         let* _resp, body =
           api_query "sendPhoto"
@@ -127,7 +127,7 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
                            ^ " and replying with a text.")
                     in
 
-                    Db.exec Q.insert_photo photo_id >>= function
+                    Q.insert_photo photo_id >>= function
                     | Ok _ -> return "Lovely photo!  I saved it in my database."
                     | Error _ ->
                         return "Lovely photo!  I tried saving it, but failed."
@@ -144,7 +144,7 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
     let open Yojson.Basic in
     let message_id = member "message_id" message |> Util.to_int in
     let message_string = message |> to_string in
-    let* _ = Db.exec Q.insert_message (message_id, message_string) in
+    let* _ = Q.insert_message (message_id, message_string) in
     return message_id
 
   let store update =
@@ -154,7 +154,7 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
     in
     let message = member "message" update in
     let* message_id = store_message message in
-    let* _ = Db.exec Q.insert_update (update_id, message_id) in
+    let* _ = Q.insert_update (update_id, message_id) in
     return message
 
   let process body =
@@ -180,7 +180,7 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
 
   let body () =
     let* offset =
-      Db.find_opt Q.select_max_update () >>= function
+      Q.select_max_update () >>= function
       | Ok o -> return o
       | Error _ -> return None
     in
