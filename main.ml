@@ -1,6 +1,5 @@
-open Lwt
+open Lwt.Infix
 open Lwt.Syntax
-open Cohttp_lwt_unix
 
 type log_level = [ `Log_error | `Log_info | `Log_debug ]
 
@@ -14,7 +13,7 @@ let log' msg =
   | `Info text, `Log_info
   | `Info text, `Log_debug
   | `Debug text, `Log_debug -> Lwt_io.printl text
-  | _ -> return ()
+  | _ -> Lwt.return ()
 
 let with_timeout time f =
   Lwt.pick
@@ -59,26 +58,26 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
 
   let is_user_authorized user_id =
     Q.is_user_authorized user_id >>= function
-    | Ok (Some true) -> return true (* user authorized *)
+    | Ok (Some true) -> Lwt.return true (* user authorized *)
     | Ok (Some false) (* user unauthorized *) | Ok None (* user unknown *) ->
-        return false
+        Lwt.return false
     | Error err ->
         let* _ = log' @@ `Error (Caqti_error.show err) in
-        return false
+        Lwt.return false
 
   let api_query method' params =
     Uri.make ~scheme:"https" ~host:"api.telegram.org"
       ~path:(Printf.sprintf "bot%s/%s" token method')
       ~query:params ()
-    |> Client.get
+    |> Cohttp_lwt_unix.Client.get
 
   let log_reply body =
     let* content = body |> Cohttp_lwt.Body.to_string in
     let* _ = log' (`Debug content) in
     let* result =
       match Yojson.Basic.from_string content |> member "ok" with
-      | `Bool true -> return (`Info "Got 'ok' response.")
-      | _ -> return (`Error "No 'ok' response!")
+      | `Bool true -> Lwt.return (`Info "Got 'ok' response.")
+      | _ -> Lwt.return (`Error "No 'ok' response!")
     in
     log' result
 
@@ -128,12 +127,14 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
                     in
 
                     Q.insert_photo photo_id >>= function
-                    | Ok _ -> return "Lovely photo!  I saved it in my database."
+                    | Ok _ ->
+                        Lwt.return "Lovely photo!  I saved it in my database."
                     | Error _ ->
-                        return "Lovely photo!  I tried saving it, but failed."
+                        Lwt.return
+                          "Lovely photo!  I tried saving it, but failed."
                   else
                     let* _ = log' (`Info "Replying with a text.") in
-                    return "Lovely photo, meow!"
+                    Lwt.return "Lovely photo, meow!"
                 in
                 text_reply reply chat_id
             | _ -> raise (Failure "No photo id found."))
@@ -145,7 +146,7 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
     let message_id = member "message_id" message |> Util.to_int in
     let message_string = message |> to_string in
     let* _ = Q.insert_message (message_id, message_string) in
-    return message_id
+    Lwt.return message_id
 
   let store update =
     let open Yojson.Basic in
@@ -155,7 +156,7 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
     let message = member "message" update in
     let* message_id = store_message message in
     let* _ = Q.insert_update (update_id, message_id) in
-    return message
+    Lwt.return message
 
   let process body =
     let* _ = log' (`Info body) in
@@ -174,15 +175,15 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
                      try store update >>= reply
                      with Failure err -> log' (`Error err))
             in
-            return ()
-        | _ -> return ())
-    | _ -> return ()
+            Lwt.return ()
+        | _ -> Lwt.return ())
+    | _ -> Lwt.return ()
 
   let body () =
     let* offset =
       Q.select_max_update () >>= function
-      | Ok o -> return o
-      | Error _ -> return None
+      | Ok o -> Lwt.return o
+      | Error _ -> Lwt.return None
     in
     let* response =
       let* _ =
@@ -202,7 +203,7 @@ module Sushi_bot (Db : Caqti_lwt.CONNECTION) = struct
             | None -> [])))
     in
     match response with
-    | Error `Timeout -> return ()
+    | Error `Timeout -> Lwt.return ()
     | Ok (resp, body) ->
         let status = Cohttp_lwt.Response.status resp in
         let* _ = log' @@ `Info (Cohttp.Code.string_of_status status) in
